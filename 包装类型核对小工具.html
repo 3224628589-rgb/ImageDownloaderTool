@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>包装类型核对小工具</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4d;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3d8bfd;
+      --accent-dim: #2a5fa8;
+      --ok: #3ecf8e;
+      --warn: #f0b429;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 1920px;
+      margin-inline: auto;
+    }
+    header {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; }
+    label.btn, button, .file-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+    }
+    label.btn:hover, button:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: #243044;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent-dim);
+      color: #fff;
+      font-weight: 600;
+    }
+    button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+    input[type="file"] { display: none; }
+    .config-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      width: 100%;
+      margin-top: 4px;
+    }
+    .config-row input[type="text"], .config-row input[type="password"] {
+      flex: 1;
+      min-width: 180px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      padding: 12px 20px;
+      background: #121a24;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat {
+      padding: 10px 14px;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .stat .n { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+    .stat .l { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    main { padding: 16px 20px 24px; min-height: calc(100vh - 200px); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: calc(100vh - 240px);
+      max-height: calc(100vh - 120px);
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 24px;
+      align-items: baseline;
+    }
+    .meta strong { color: var(--muted); font-weight: 500; font-size: 13px; }
+    .meta .name { font-size: 1.25rem; font-weight: 600; }
+    .meta .spec { font-size: 1rem; color: var(--muted); }
+    .progress-line { font-size: 13px; color: var(--muted); }
+    .gallery {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 10px;
+      height: calc(100vh - 380px);
+      max-height: 640px;
+    }
+    @media (max-width: 900px) {
+      .gallery {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        height: auto;
+        max-height: none;
+        min-height: 420px;
+      }
+    }
+    .cell {
+      background: #0d1218;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .cell .cap {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .cell .img-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+    }
+    .cell img {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+    .cell .placeholder {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 20px;
+      text-align: center;
+    }
+    .radios {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+    .radios label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .radios input { accent-color: var(--accent); width: 16px; height: 16px; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding-top: 8px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted);
+    }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>包装类型核对小工具</h1>
+    <div class="toolbar">
+      <span class="file-wrap">
+        <label class="btn" for="xlsx">导入 Excel</label>
+        <input type="file" id="xlsx" accept=".xlsx,.xls" />
+      </span>
+      <button type="button" id="btnRefresh" disabled>刷新图片</button>
+      <button type="button" id="btnExport" disabled>导出进度 Excel</button>
+    </div>
+  </header>
+  <div class="config-row" style="padding: 10px 20px; background: #121a24; border-bottom: 1px solid var(--border);">
+    <span style="font-size:12px;color:var(--muted);white-space:nowrap;">CDN 域名</span>
+    <input type="text" id="cdnDomain" value="pharmacytencent.ysbang.cn" autocomplete="off" />
+    <span style="font-size:12px;color:var(--muted);white-space:nowrap;">CDN 鉴权 Key</span>
+    <input type="text" id="cdnKey" value="85DC4EUti6u9q14KT1sxEPrldyUkW" autocomplete="off" />
+    <span class="hint" style="margin:0;">与 gen_cdn_auth_urls.py 默认一致；可改环境变量等价项。刷新图片会按当前配置重签 URL。</span>
+  </div>
+  <div class="stats" id="stats" style="display:none;">
+    <div class="stat"><div class="n" id="sTotal">0</div><div class="l">商品总数</div></div>
+    <div class="stat"><div class="n" id="sDone">0</div><div class="l">已核对</div></div>
+    <div class="stat"><div class="n" id="sOk">0</div><div class="l">没问题（与导入一致）</div></div>
+    <div class="stat"><div class="n" id="sChanged">0</div><div class="l">改过分类</div></div>
+  </div>
+  <main>
+    <div id="empty" class="empty-state">
+      请先导入与模板一致的 Excel（含 goods_base_id、tx_cos_key、surface、商品名称、规格、包装类型）。
+    </div>
+    <div id="work" style="display:none;">
+      <div class="card">
+        <div class="progress-line" id="progressLine"></div>
+        <div class="meta">
+          <div><strong>商品 ID</strong> <span id="gid"></span></div>
+          <div class="name" id="gname"></div>
+          <div class="spec" id="gspec"></div>
+        </div>
+        <div class="gallery" id="gallery"></div>
+        <div>
+          <strong style="font-size:13px;color:var(--muted);">包装类型</strong>
+          <div class="radios" id="radios"></div>
+        </div>
+        <div class="actions">
+          <button type="button" id="btnPrev">上一条</button>
+          <button type="button" class="primary" id="btnNext">没问题，下一条</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+(function () {
+  'use strict';
+
+  const STORAGE_PREFIX = 'pkgVerify_v1_';
+  const SURFACE_NAMES = ['顶面图', '底面图', '左面图', '右面图', '正面图', '背面图'];
+  const PKG_LABELS = [
+    ['0', '其他'],
+    ['1', '盒装'],
+    ['2', '袋装'],
+    ['3', '片装'],
+    ['4', '大瓶装'],
+    ['5', '小瓶装']
+  ];
+
+  const MULT = 0x5DEECE66Dn;
+  const ADDEND = 0xBn;
+  const MASK = (1n << 48n) - 1n;
+
+  function javaNext(seed, bits) {
+    seed = (seed * MULT + ADDEND) & MASK;
+    const r = Number((seed >> BigInt(48 - bits)) & ((1n << BigInt(bits)) - 1n));
+    return { seed, r };
+  }
+
+  function javaNextInt(seed, n) {
+    if (n <= 0) throw new Error('n must be positive');
+    if ((n & (n - 1)) === 0) {
+      const { seed: s2, r } = javaNext(seed, 31);
+      return { seed: s2, value: (n * r) >> 31 };
+    }
+    while (true) {
+      const { seed: s2, r } = javaNext(seed, 31);
+      if (r < 0x7FFFFFFF - (0x7FFFFFFF % n)) {
+        return { seed: s2, value: r % n };
+      }
+      seed = s2;
+    }
+  }
+
+  /** 与 gen_cdn_auth_urls.generate_random_java 一致 */
+  function generateRandomJava(timestamp) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let seed = (BigInt(timestamp) ^ MULT) & MASK;
+    let ni = javaNextInt(seed, 100);
+    seed = ni.seed;
+    const len = ni.value + 1;
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      ni = javaNextInt(seed, chars.length);
+      seed = ni.seed;
+      out += chars[ni.value];
+    }
+    return out;
+  }
+
+  /** 与 gen_cdn_auth_urls.generate_type_a_auth_url 一致（当天 0 点本地时区） */
+  function generateTypeAAuthUrl(cosKey, cdnDomain, cdnKey) {
+    cosKey = String(cosKey || '').trim();
+    if (!cosKey) return '';
+    const domain = String(cdnDomain || '').replace(/\/+$/, '');
+    const key = String(cdnKey || '');
+    let url = 'https://' + domain + '/' + cosKey.replace(/^\/+/, '');
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const timestamp = Math.floor(now.getTime() / 1000);
+    const randomString = generateRandomJava(timestamp);
+    const signStr = '/' + cosKey + '-' + timestamp + '-' + randomString + '-0-' + key;
+    const signMd5 = CryptoJS.MD5(signStr).toString(CryptoJS.enc.Hex);
+    const sign = timestamp + '-' + randomString + '-0-' + signMd5;
+    url += (url.indexOf('?') >= 0 ? '&' : '?') + 'sign=' + encodeURIComponent(sign);
+    return url;
+  }
+
+  function normHeader(s) {
+    return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, '');
+  }
+
+  function findCol(headers, candidates) {
+    const n = headers.map(normHeader);
+    for (const c of candidates) {
+      const want = normHeader(c);
+      const i = n.indexOf(want);
+      if (i >= 0) return headers[i];
+    }
+    for (const c of candidates) {
+      const w = normHeader(c);
+      const i = n.findIndex(h => h.includes(w) || w.includes(h));
+      if (i >= 0) return headers[i];
+    }
+    return null;
+  }
+
+  function parsePkg(v) {
+    if (v === '' || v == null) return 0;
+    const n = parseInt(String(v).trim(), 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(5, n)) : 0;
+  }
+
+  function parseSurface(v) {
+    const n = parseInt(String(v).trim(), 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(5, n)) : 0;
+  }
+
+  function fileKeyFromProducts(products) {
+    const s = products.map(p => p.goods_base_id).sort().join('|');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return 'fk' + (h >>> 0).toString(16);
+  }
+
+  let state = {
+    fileKey: '',
+    products: [],
+    currentIndex: 0,
+    cdnDomain: '',
+    cdnKey: ''
+  };
+
+  function getCdn() {
+    return {
+      domain: document.getElementById('cdnDomain').value.trim() || 'pharmacytencent.ysbang.cn',
+      key: document.getElementById('cdnKey').value.trim() || '85DC4EUti6u9q14KT1sxEPrldyUkW'
+    };
+  }
+
+  function assignUrls() {
+    const { domain, key } = getCdn();
+    state.cdnDomain = domain;
+    state.cdnKey = key;
+    for (const p of state.products) {
+      for (const im of p.images) {
+        im.url = generateTypeAAuthUrl(im.tx_cos_key, domain, key);
+      }
+    }
+  }
+
+  function save() {
+    if (!state.fileKey || !state.products.length) return;
+    const payload = {
+      fileKey: state.fileKey,
+      currentIndex: state.currentIndex,
+      cdnDomain: state.cdnDomain,
+      cdnKey: state.cdnKey,
+      products: state.products.map(p => ({
+        goods_base_id: p.goods_base_id,
+        name: p.name,
+        spec: p.spec,
+        originalPkg: p.originalPkg,
+        selectedPkg: p.selectedPkg,
+        reviewed: p.reviewed,
+        finalPkg: p.finalPkg,
+        images: p.images.map(im => ({ surface: im.surface, tx_cos_key: im.tx_cos_key }))
+      }))
+    };
+    payload.savedAt = Date.now();
+    try {
+      localStorage.setItem(STORAGE_PREFIX + state.fileKey, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('localStorage save failed', e);
+    }
+  }
+
+  function loadStored(fileKey) {
+    try {
+      const raw = localStorage.getItem(STORAGE_PREFIX + fileKey);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function buildRowsFromSheet(rows) {
+    if (!rows.length) return [];
+    const headers = Object.keys(rows[0]);
+    const idCol = findCol(headers, ['goods_base_id', 'good_base_id', '商品id']);
+    const cosCol = findCol(headers, ['tx_cos_key', 'cos_key', 'txcoskey']);
+    const surfCol = findCol(headers, ['surface', 'surfa', '面']);
+    const nameCol = findCol(headers, ['商品名称', '名称']);
+    const specCol = findCol(headers, ['规格', '商品规格']);
+    const pkgCol = findCol(headers, ['包装类型', '包装']);
+    if (!idCol || !cosCol) {
+      alert('未找到必需列：goods_base_id 与 tx_cos_key（或 cos_key）。当前表头：' + headers.join(', '));
+      return null;
+    }
+    const order = [];
+    const map = Object.create(null);
+    for (const row of rows) {
+      const id = row[idCol];
+      if (id === '' || id == null) continue;
+      const gid = String(id).trim();
+      const cos = String(row[cosCol] || '').trim();
+      const surf = surfCol ? parseSurface(row[surfCol]) : 0;
+      const name = nameCol ? String(row[nameCol] || '') : '';
+      const spec = specCol ? String(row[specCol] || '') : '';
+      const pkg = pkgCol ? parsePkg(row[pkgCol]) : 0;
+      if (!map[gid]) {
+        map[gid] = {
+          goods_base_id: gid,
+          name: name,
+          spec: spec,
+          originalPkg: pkg,
+          selectedPkg: pkg,
+          reviewed: false,
+          finalPkg: null,
+          images: []
+        };
+        order.push(gid);
+      } else {
+        if (name) map[gid].name = name;
+        if (spec) map[gid].spec = spec;
+      }
+      if (cos) {
+        const existing = map[gid].images.find(x => x.surface === surf);
+        if (existing) existing.tx_cos_key = cos;
+        else map[gid].images.push({ surface: surf, tx_cos_key: cos, url: '' });
+      }
+    }
+    for (const gid of order) {
+      map[gid].images.sort((a, b) => a.surface - b.surface);
+    }
+    return order.map(gid => map[gid]);
+  }
+
+  function mergeStored(products, stored) {
+    if (!stored || stored.fileKey !== fileKeyFromProducts(products)) return products;
+    const byId = Object.create(null);
+    for (const p of stored.products) byId[p.goods_base_id] = p;
+    for (const p of products) {
+      const s = byId[p.goods_base_id];
+      if (!s) continue;
+      p.selectedPkg = typeof s.selectedPkg === 'number' ? s.selectedPkg : p.originalPkg;
+      p.reviewed = !!s.reviewed;
+      p.finalPkg = s.finalPkg != null ? s.finalPkg : null;
+    }
+    if (stored.cdnDomain) document.getElementById('cdnDomain').value = stored.cdnDomain;
+    if (stored.cdnKey) document.getElementById('cdnKey').value = stored.cdnKey;
+    state.currentIndex = Math.min(stored.currentIndex | 0, Math.max(0, products.length - 1));
+    return products;
+  }
+
+  function hydrateFromPayload(payload) {
+    state.fileKey = payload.fileKey;
+    state.currentIndex = Math.min(payload.currentIndex | 0, Math.max(0, (payload.products || []).length - 1));
+    if (payload.cdnDomain) document.getElementById('cdnDomain').value = payload.cdnDomain;
+    if (payload.cdnKey) document.getElementById('cdnKey').value = payload.cdnKey;
+    state.products = (payload.products || []).map(p => ({
+      goods_base_id: p.goods_base_id,
+      name: p.name || '',
+      spec: p.spec || '',
+      originalPkg: parsePkg(p.originalPkg),
+      selectedPkg: parsePkg(p.selectedPkg),
+      reviewed: !!p.reviewed,
+      finalPkg: p.finalPkg != null ? parsePkg(p.finalPkg) : null,
+      images: (p.images || []).map(im => ({
+        surface: parseSurface(im.surface),
+        tx_cos_key: im.tx_cos_key || '',
+        url: ''
+      }))
+    }));
+    for (const p of state.products) {
+      p.images.sort((a, b) => a.surface - b.surface);
+    }
+    assignUrls();
+  }
+
+  function recomputeStats() {
+    const total = state.products.length;
+    let done = 0, ok = 0, changed = 0;
+    for (const p of state.products) {
+      if (!p.reviewed) continue;
+      done++;
+      const fin = p.finalPkg != null ? p.finalPkg : p.originalPkg;
+      if (fin === p.originalPkg) ok++;
+      else changed++;
+    }
+    document.getElementById('sTotal').textContent = String(total);
+    document.getElementById('sDone').textContent = String(done);
+    document.getElementById('sOk').textContent = String(ok);
+    document.getElementById('sChanged').textContent = String(changed);
+  }
+
+  function renderRadios() {
+    const p = state.products[state.currentIndex];
+    const box = document.getElementById('radios');
+    box.innerHTML = '';
+    for (const [val, label] of PKG_LABELS) {
+      const id = 'pkg_' + val;
+      const lab = document.createElement('label');
+      const inp = document.createElement('input');
+      inp.type = 'radio';
+      inp.name = 'pkg';
+      inp.value = val;
+      inp.id = id;
+      inp.checked = String(p.selectedPkg) === val;
+      inp.addEventListener('change', () => {
+        p.selectedPkg = parseInt(val, 10);
+        save();
+      });
+      lab.appendChild(inp);
+      lab.appendChild(document.createTextNode(val + '：' + label));
+      box.appendChild(lab);
+    }
+  }
+
+  function renderGallery() {
+    const p = state.products[state.currentIndex];
+    const g = document.getElementById('gallery');
+    g.innerHTML = '';
+    for (let s = 0; s < 6; s++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const cap = document.createElement('div');
+      cap.className = 'cap';
+      cap.textContent = s + ' ' + SURFACE_NAMES[s];
+      const wrap = document.createElement('div');
+      wrap.className = 'img-wrap';
+      const im = p.images.find(x => x.surface === s);
+      if (im && im.url) {
+        const img = document.createElement('img');
+        img.src = im.url;
+        img.alt = SURFACE_NAMES[s];
+        img.referrerPolicy = 'no-referrer';
+        img.onerror = function () {
+          wrap.innerHTML = '<div class="placeholder">图片加载失败，可点「刷新图片」重试</div>';
+        };
+        wrap.appendChild(img);
+      } else {
+        wrap.innerHTML = '<div class="placeholder">无此面图片</div>';
+      }
+      cell.appendChild(cap);
+      cell.appendChild(wrap);
+      g.appendChild(cell);
+    }
+  }
+
+  function render() {
+    if (!state.products.length) return;
+    const p = state.products[state.currentIndex];
+    document.getElementById('progressLine').textContent =
+      '当前第 ' + (state.currentIndex + 1) + ' / ' + state.products.length + ' 个商品';
+    document.getElementById('gid').textContent = p.goods_base_id;
+    document.getElementById('gname').textContent = p.name || '（无名称）';
+    document.getElementById('gspec').textContent = p.spec ? '规格：' + p.spec : '';
+    renderGallery();
+    renderRadios();
+    document.getElementById('btnPrev').disabled = state.currentIndex <= 0;
+    recomputeStats();
+  }
+
+  function showWork(show) {
+    document.getElementById('empty').style.display = show ? 'none' : 'block';
+    document.getElementById('work').style.display = show ? 'block' : 'none';
+    document.getElementById('stats').style.display = show ? 'grid' : 'none';
+    document.getElementById('btnRefresh').disabled = !show;
+    document.getElementById('btnExport').disabled = !show;
+  }
+
+  document.getElementById('xlsx').addEventListener('change', function (e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = function (ev) {
+      let wb;
+      try {
+        wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      } catch (err) {
+        alert('无法解析 Excel：' + err.message);
+        return;
+      }
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      const products = buildRowsFromSheet(rows);
+      if (!products) return;
+      state.fileKey = fileKeyFromProducts(products);
+      state.products = products;
+      state.currentIndex = 0;
+      const stored = loadStored(state.fileKey);
+      mergeStored(state.products, stored);
+      assignUrls();
+      showWork(true);
+      render();
+      save();
+    };
+    reader.readAsArrayBuffer(f);
+    e.target.value = '';
+  });
+
+  document.getElementById('btnRefresh').addEventListener('click', function () {
+    assignUrls();
+    render();
+    save();
+  });
+
+  document.getElementById('btnPrev').addEventListener('click', function () {
+    if (state.currentIndex > 0) {
+      state.currentIndex--;
+      render();
+      save();
+    }
+  });
+
+  document.getElementById('btnNext').addEventListener('click', function () {
+    const p = state.products[state.currentIndex];
+    const radios = document.querySelectorAll('input[name="pkg"]');
+    let sel = p.selectedPkg;
+    for (const r of radios) {
+      if (r.checked) sel = parseInt(r.value, 10);
+    }
+    p.selectedPkg = sel;
+    p.reviewed = true;
+    p.finalPkg = sel;
+    save();
+    recomputeStats();
+    if (state.currentIndex < state.products.length - 1) {
+      state.currentIndex++;
+      render();
+      save();
+    } else {
+      render();
+      alert('已全部核对完成。可导出 Excel 留存结果。');
+    }
+  });
+
+  document.getElementById('btnExport').addEventListener('click', function () {
+    if (!state.products.length) return;
+    const rows = [['goods_base_id', '一开始的包装类型', '改之后的包装类型', '包装类型前后是否一致']];
+    for (const p of state.products) {
+      const orig = p.originalPkg;
+      const reviewed = p.reviewed && p.finalPkg != null;
+      const after = reviewed ? p.finalPkg : '';
+      const same = reviewed ? (orig === after ? '是' : '否') : '';
+      rows.push([p.goods_base_id, String(orig), reviewed ? String(after) : '', same]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '核对进度');
+    const name = '包装类型核对导出_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.xlsx';
+    XLSX.writeFile(wb, name);
+  });
+
+  function tryRestoreFromLocalStorage() {
+    let best = null;
+    let bestTs = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || k.indexOf(STORAGE_PREFIX) !== 0) continue;
+      try {
+        const o = JSON.parse(localStorage.getItem(k));
+        const ts = o.savedAt | 0;
+        if (ts >= bestTs && o.products && o.products.length) {
+          bestTs = ts;
+          best = o;
+        }
+      } catch (e) { /* ignore */ }
+    }
+    if (!best) return;
+    hydrateFromPayload(best);
+    showWork(true);
+    render();
+  }
+
+  document.getElementById('cdnDomain').addEventListener('change', save);
+  document.getElementById('cdnKey').addEventListener('change', save);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryRestoreFromLocalStorage);
+  } else {
+    tryRestoreFromLocalStorage();
+  }
+})();
+  </script>
+</body>
+</html>
